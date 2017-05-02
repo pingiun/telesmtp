@@ -5,12 +5,17 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/fatih/color"
+	"io/ioutil"
 	"net"
+	"net/mail"
 	"os"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/fatih/color"
+
+	"gopkg.in/yaml.v2"
 )
 
 const TELESMTP_VERSION = "0.0.1"
@@ -66,24 +71,33 @@ func (c Command) String() string {
 	}
 }
 
-type Email struct {
-	user string
-	host string
+type MessageStruct struct {
+	Mail mail.Message
+	RawMail bytes.Buffer
+	To Address
+}
+
+type Address struct {
+	User string
+	Host string
 }
 
 type Client struct {
-	mode     Mode
-	addr     net.Addr
-	host     string
-	identity string
-	from     Email
-	to       Email
-	mail     bytes.Buffer
+	Mode     Mode
+	Addr     net.Addr
+	Host     string
+	Identity string
+	Ip       string
+	From     Address
+	To       Address
+	Mail     bytes.Buffer
 }
 
 type Settings struct {
-	hostname      string
-	valid_domains []string
+	Hostname     string
+	Port uint16
+	ValidDomains []string `yaml:"valid_domains"`
+	MailboxDir string `yaml:"mailbox_dir"`
 }
 
 func getCommand(input string) (command Command, args []string) {
@@ -150,24 +164,24 @@ func handleHELO(c net.Conn, status *Client, config Settings, command Command, ar
 	} else if err != nil {
 		write(c, "501 Invalid domain name")
 	} else {
-		status.identity = identity
-		status.mode = ModeIdentified
+		status.Identity = identity
+		status.Mode = ModeIdentified
 		if command == CommandEHLO {
-			write(c, "250-%s here, welcome %s [%s], pleased to meet you", config.hostname, status.host, status.addr)
+			write(c, "250-%s here, welcome %s [%s], pleased to meet you", config.Hostname, status.Host, status.Addr)
 			write(c, "250 HELP")
 		} else {
-			write(c, "250 %s at your service", config.hostname)
+			write(c, "250 %s at your service", config.Hostname)
 		}
 	}
 }
 
 func handleQUIT(c net.Conn, config Settings) {
-	write(c, "221 %s closing connection", config.hostname)
+	write(c, "221 %s closing connection", config.Hostname)
 	c.Close()
 }
 
 func handleRSET(c net.Conn, status *Client) {
-	status.mode = ModeInitial
+	status.Mode = ModeInitial
 	write(c, "250 Reset state")
 }
 
@@ -194,46 +208,46 @@ func handleModeInitial(c net.Conn, status *Client, config Settings, line string)
 	}
 }
 
-func parseAddress(args []string, from bool) (address Email, err error) {
+func parseAddress(args []string, from bool) (address Address, err error) {
 	if len(args) == 0 {
-		return Email{}, errors.New("parseAddress: no arguments")
+		return Address{}, errors.New("parseAddress: no arguments")
 	}
-	re := regexp.MustCompile("<\\s*(.+)@(.+)\\s*>")
+	re := regexp.MustCompile(`<\s*(.+)@(.+)\s*>`)
 	if len(args) == 1 {
 		split := strings.SplitN(args[0], ":", 2)
 		if split[0] != "FROM" && from {
-			return Email{}, errors.New("parseAddress: invalid arguments")
+			return Address{}, errors.New("parseAddress: invalid arguments")
 		}
 		if split[0] != "TO" && !from {
-			return Email{}, errors.New("parseAddress: invalid arguments")
+			return Address{}, errors.New("parseAddress: invalid arguments")
 		}
 
 		parts := re.FindStringSubmatch(split[1])
 		if len(parts) != 3 {
-			panic("Fatal email error")
+			return Address{}, errors.New("parseAddress: invalid email")
 		}
-		return Email{user: parts[1], host: parts[2]}, nil
+		return Address{User: parts[1], Host: parts[2]}, nil
 	}
 	if len(args) == 2 {
 		if args[1] != "FROM:" && from {
-			return Email{}, errors.New("parseAddress: invalid arguments")
+			return Address{}, errors.New("parseAddress: invalid arguments")
 		}
 		if args[1] != "TO:" && !from {
-			return Email{}, errors.New("parseAddress: invalid arguments")
+			return Address{}, errors.New("parseAddress: invalid arguments")
 		}
 
 		parts := re.FindStringSubmatch(args[1])
 		if len(parts) != 3 {
 			panic("Fatal email error")
 		}
-		return Email{user: parts[1], host: parts[2]}, nil
+		return Address{User: parts[1], Host: parts[2]}, nil
 	}
-	return Email{}, errors.New("parseAddress: too many arguments")
+	return Address{}, errors.New("parseAddress: too many arguments")
 }
 
 func validDomain(domain string, config Settings) bool {
 	valid := false
-	for _, d := range config.valid_domains {
+	for _, d := range config.ValidDomains {
 		if d == domain {
 			return true
 		}
@@ -247,9 +261,9 @@ func handleMAIL(c net.Conn, status *Client, config Settings, command Command, ar
 		write(c, "501 Invalid parameters")
 		return
 	}
-	status.from = email
-	status.mode = ModeMail
-	write(c, "250 <%s@%s> sender OK", email.user, email.host)
+	status.From = email
+	status.Mode = ModeMail
+	write(c, "250 <%s@%s> sender OK", email.User, email.Host)
 }
 
 func handleModeIdentified(c net.Conn, status *Client, config Settings, line string) {
@@ -283,12 +297,12 @@ func handleRCPT(c net.Conn, status *Client, config Settings, command Command, ar
 		write(c, "501 Invalid parameters")
 		return
 	}
-	if validDomain(email.host, config) {
-		status.to = email
-		status.mode = ModeRcpt
-		write(c, "250 <%s@%s> recipient OK", email.user, email.host)
+	if validDomain(email.Host, config) {
+		status.To = email
+		status.Mode = ModeRcpt
+		write(c, "250 <%s@%s> recipient OK", email.User, email.Host)
 	} else {
-		write(c, "550 No such user: %s@%s", email.user, email.host)
+		write(c, "550 No such user: %s@%s", email.User, email.Host)
 	}
 }
 
@@ -319,6 +333,27 @@ func handleModeMail(c net.Conn, status *Client, config Settings, line string) {
 	}
 }
 
+func word_wrap(text string, lineWidth int) string {
+	words := strings.Fields(strings.TrimSpace(text))
+	if len(words) == 0 {
+		return text
+	}
+	wrapped := words[0]
+	spaceLeft := lineWidth - len(wrapped)
+	for _, word := range words[1:] {
+		if len(word)+1 > spaceLeft {
+			wrapped += "\r\n        " + word
+			spaceLeft = lineWidth - len(word)
+		} else {
+			wrapped += " " + word
+			spaceLeft -= 1 + len(word)
+		}
+	}
+
+	return wrapped
+
+}
+
 func handleModeRcpt(c net.Conn, status *Client, config Settings, line string) {
 	command, args := getCommand(line)
 
@@ -340,26 +375,45 @@ func handleModeRcpt(c net.Conn, status *Client, config Settings, line string) {
 	case CommandRCPT:
 		write(c, "503 Recipient already specified")
 	case CommandDATA:
+		status.Mode = ModeData
+		status.Mail.WriteString(word_wrap(
+			fmt.Sprintf("Received: from %s (%s) by %s with telesmtp; %s", 
+				status.Host, status.Addr, config.Hostname, time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700")), 78))
+		status.Mail.WriteString("\r\n")
 		write(c, "354 Go ahead, end your message with a single \".\"")
-		status.mode = ModeData
 	case CommandUnknown:
 		write(c, "500 Unrecognized command.")
 	}
 }
 
-func handleModeData(c net.Conn, ch chan string, status *Client, config Settings, line string) {
+func handleModeData(c net.Conn, ch chan string, mailchan chan MessageStruct, status *Client, config Settings, line string) {
 	if line == "." {
-		ch <- "Sending mail:"
-		ch <- status.mail.String()
-		status.mode = ModeIdentified
+		message, err := mail.ReadMessage(bytes.NewReader(status.Mail.Bytes()))
+		if err != nil {
+			status.Mode = ModeIdentified
+			write(c, "541 Could not parse your message, rejected to reduce spam")
+			return
+		}
+
+		header := message.Header
+
+		if header.Get("From") == "" || header.Get("Subject") == "" {
+			status.Mode = ModeIdentified
+			write(c, "541 Please supply From and Subject headers, rejected to reduce spam")
+			fmt.Println(status.Mail.String())
+			return
+		}
+
+		status.Mode = ModeIdentified
+		mailchan <- MessageStruct{Mail: *message, RawMail: status.Mail, To: status.To}
 		write(c, "250 Message accepted for delivery")
 	} else {
-		status.mail.WriteString(line)
-		status.mail.WriteString("\r\n")
+		status.Mail.WriteString(line)
+		status.Mail.WriteString("\r\n")
 	}
 }
 
-func handler(c net.Conn, ch chan string, config Settings) {
+func handler(c net.Conn, ch chan string, mail chan MessageStruct, config Settings) {
 	defer c.Close()
 
 	addr := c.RemoteAddr()
@@ -372,18 +426,20 @@ func handler(c net.Conn, ch chan string, config Settings) {
 	} else {
 		host = hosts[0]
 	}
-	status := Client{mode: ModeInitial, addr: addr, host: host}
+	status := Client{Mode: ModeInitial, Addr: addr, Host: host, Ip: ip}
 
-	ch <- fmt.Sprintf("Accepting connection from %s", status.addr.String())
+	defer func() { ch <- fmt.Sprintf("Closing connection from %s", status.Addr.String()) }()
+
+	ch <- fmt.Sprintf("Accepting connection from %s", status.Addr.String())
 
 	scanner := bufio.NewScanner(c)
 
-	write(c, "220 %s Running telesmtp", config.hostname)
+	write(c, "220 %s Running telesmtp", config.Hostname)
 
 	for scanner.Scan() {
 		ch <- fmt.Sprintf("%s: %s", c.RemoteAddr(), scanner.Text())
 
-		switch status.mode {
+		switch status.Mode {
 		case ModeInitial:
 			handleModeInitial(c, &status, config, scanner.Text())
 		case ModeIdentified:
@@ -393,18 +449,18 @@ func handler(c net.Conn, ch chan string, config Settings) {
 		case ModeRcpt:
 			handleModeRcpt(c, &status, config, scanner.Text())
 		case ModeData:
-			handleModeData(c, ch, &status, config, scanner.Text())
+			handleModeData(c, ch, mail, &status, config, scanner.Text())
 		}
 	}
 }
 
-func server(l net.Listener, ch chan string, config Settings) {
+func server(l net.Listener, ch chan string, mail chan MessageStruct, config Settings) {
 	for {
 		c, err := l.Accept()
 		if err != nil {
 			continue
 		}
-		go handler(c, ch, config)
+		go handler(c, ch, mail, config)
 	}
 }
 
@@ -416,21 +472,27 @@ func logger(ch chan string) {
 }
 
 func main() {
-	var hostname string
+	data, err := ioutil.ReadFile("config.yaml")
+	check(err)
+
+	config := Settings{}
+
+	err = yaml.Unmarshal(data, &config)
+	check(err)
 
 	if len(os.Args) == 2 {
-		hostname = os.Args[1]
-	} else {
-		var err error
-		hostname, err = os.Hostname()
+		config.Hostname = os.Args[1]
+	} else if config.Hostname == "" {
+		hostname, err := os.Hostname()
 
 		if err != nil {
 			fmt.Println("Could not get hostname and not supplied on command line")
 			os.Exit(1)
 		}
+		config.Hostname = hostname
 	}
 
-	l, err := net.Listen("tcp", ":25")
+	l, err := net.Listen("tcp", fmt.Sprintf(":%d", config.Port))
 	if err != nil {
 		panic(err)
 	}
@@ -438,8 +500,12 @@ func main() {
 	fmt.Printf("telesmtp listening on %s\n", l.Addr())
 
 	ch := make(chan string)
+	mail := make(chan MessageStruct)
+
 	go logger(ch)
-	go server(l, ch, Settings{hostname, []string{"ictrek.nl", "localhost", "127.0.0.1"}})
+	go server(l, ch, mail, config)
+
+	go Listen(mail, config)
 
 	for {
 		time.Sleep(10 * time.Second)

@@ -1,0 +1,6 @@
+hostname: alpha.pingiun.com
+mailbox_dir: "/Users/jelle/mailboxes"
+port: 2525
+
+valid_domains:
+  - ictrek.nl
