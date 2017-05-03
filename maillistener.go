@@ -40,7 +40,9 @@ func CreateJSONMail(raw_message MessageStruct) []byte {
 	}
 
 	var body string
-	if headers.Get("Content-Type") == "" || strings.HasPrefix(headers.Get("Content-Type"), "text/plain") {
+	if (headers.Get("Content-Type") == "" || strings.HasPrefix(headers.Get("Content-Type"), "text/plain")) &&
+		(headers.Get("Content-Transfer-Encoding") == "7bit" || headers.Get("Content-Transfer-Encoding") == "") {
+
 		b, err := ioutil.ReadAll(message.Body)
 		if err == nil {
 			body = string(b)
