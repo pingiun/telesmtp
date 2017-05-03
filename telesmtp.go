@@ -72,14 +72,19 @@ func (c Command) String() string {
 }
 
 type MessageStruct struct {
-	Mail mail.Message
+	Mail    mail.Message
 	RawMail bytes.Buffer
-	To Address
+	To      Address
+	From    Address
 }
 
 type Address struct {
 	User string
 	Host string
+}
+
+func (a Address) String() string {
+	return fmt.Sprintf("%s@%s", a.User, a.Host)
 }
 
 type Client struct {
@@ -95,9 +100,9 @@ type Client struct {
 
 type Settings struct {
 	Hostname     string
-	Port uint16
+	Port         uint16
 	ValidDomains []string `yaml:"valid_domains"`
-	MailboxDir string `yaml:"mailbox_dir"`
+	MailboxDir   string   `yaml:"mailbox_dir"`
 }
 
 func getCommand(input string) (command Command, args []string) {
@@ -133,6 +138,7 @@ func check(e error) {
 }
 
 func write(c net.Conn, fstring string, args ...interface{}) {
+	fmt.Println(fstring)
 	c.Write([]byte(fmt.Sprintf(fstring, args...)))
 	c.Write([]byte("\r\n"))
 }
@@ -377,7 +383,7 @@ func handleModeRcpt(c net.Conn, status *Client, config Settings, line string) {
 	case CommandDATA:
 		status.Mode = ModeData
 		status.Mail.WriteString(word_wrap(
-			fmt.Sprintf("Received: from %s (%s) by %s with telesmtp; %s", 
+			fmt.Sprintf("Received: from %s (%s) by %s with telesmtp; %s",
 				status.Host, status.Addr, config.Hostname, time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700")), 78))
 		status.Mail.WriteString("\r\n")
 		write(c, "354 Go ahead, end your message with a single \".\"")
@@ -405,7 +411,7 @@ func handleModeData(c net.Conn, ch chan string, mailchan chan MessageStruct, sta
 		}
 
 		status.Mode = ModeIdentified
-		mailchan <- MessageStruct{Mail: *message, RawMail: status.Mail, To: status.To}
+		mailchan <- MessageStruct{Mail: *message, RawMail: status.Mail, To: status.To, From: status.From}
 		write(c, "250 Message accepted for delivery")
 	} else {
 		status.Mail.WriteString(line)

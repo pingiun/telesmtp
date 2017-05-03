@@ -1,57 +1,75 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"encoding/json"
 	"net/mail"
-	"path"
-	"time"
 	"os"
 	"os/exec"
+	"path"
+	"strings"
+	"time"
 )
 
 type JSONMessage struct {
-	From string `json:"from"`
-	Subject string `json:"subject"`
+	From    string      `json:"from"`
+	To      []string    `json:"to"`
+	Subject string      `json:"subject"`
 	Headers mail.Header `json:"headers"`
-	Body string `body:"body"`
+	Body    string      `json:"body"`
 }
 
-func CreateJSONMail(message mail.Message) []byte {
+func CreateJSONMail(raw_message MessageStruct) []byte {
+	message := raw_message.Mail
 	headers := message.Header
-	var from_adress string 
+	var from_address string
+	var to_addresses []string
 	if parse, err := mail.ParseAddress(headers.Get("From")); err == nil {
-		from_adress = parse.String()
+		from_address = parse.String()
 	} else {
-		from_adress = headers.Get("From")
+		from_address = headers.Get("From")
+	}
+
+	if parse, err := mail.ParseAddressList(headers.Get("To")); err == nil {
+		for _, a := range parse {
+			to_addresses = append(to_addresses, a.String())
+		}
+	} else {
+		to_addresses = []string{raw_message.To.String()}
 	}
 
 	var body string
-	if b, err := ioutil.ReadAll(message.Body); err == nil {
-	    body = string(b)
+	if headers.Get("Content-Type") == "" || strings.HasPrefix(headers.Get("Content-Type"), "text/plain") {
+		b, err := ioutil.ReadAll(message.Body)
+		if err == nil {
+			body = string(b)
+		}
 	}
+
 	json_message := JSONMessage{
-		From: from_adress,
+		From:    from_address,
+		To:      to_addresses,
 		Subject: headers.Get("Subject"),
 		Headers: message.Header,
-		Body: body,
+		Body:    body,
 	}
-	content, _ := json.Marshal(json_message)
+
+	content, err := json.Marshal(json_message)
+	check(err)
 	return content
 }
 
 func Listen(ch chan MessageStruct, config Settings) {
 	for {
 		message := <-ch
-		
+
 		maildir := path.Join(config.MailboxDir, message.To.Host, message.To.User)
 		filename := path.Join(maildir, fmt.Sprintf("%d.eml", time.Now().UnixNano()))
 
 		check(os.MkdirAll(maildir, 0700))
-		
-		ioutil.WriteFile(filename,
-			message.RawMail.Bytes(), 0600)
+
+		ioutil.WriteFile(filename, message.RawMail.Bytes(), 0600)
 
 		cmd := exec.Command("./fwdtelegram.py")
 		cmd.Env = append(os.Environ(), "TELESMTP_MAIL_FILE="+filename)
@@ -63,7 +81,7 @@ func Listen(ch chan MessageStruct, config Settings) {
 
 		var out []byte
 		go func() {
-			stdin.Write(CreateJSONMail(message.Mail))
+			stdin.Write(CreateJSONMail(message))
 			stdin.Close()
 			out, err = cmd.CombinedOutput()
 			if err != nil {
