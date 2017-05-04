@@ -67,7 +67,7 @@ def main():
         to_addresses = message['to'][0]
 
     for address in message['to']:
-        email = address_re.search(address)[1]
+        email = address_re.search(address).group(1)
         for tg_user in TelegramUser.query.filter(TelegramUser.emailaddresses.any(address=email)):
             send_message(str(tg_user.user_id), message['from'], message['to'], message['subject'], message['body'])
 
