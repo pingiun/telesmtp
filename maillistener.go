@@ -126,7 +126,7 @@ func Listen(ch chan MessageStruct, config Settings) {
 		ioutil.WriteFile(filename, message.RawMail.Bytes(), 0600)
 
 		cmd := exec.Command("./fwdtelegram.py")
-		cmd.Env = append(os.Environ(), "TELESMTP_MAIL_FILE="+filename)
+		cmd.Env = append(os.Environ(), "TELESMTP_MAIL_FILE="+filename, "DB_URL=sqlite:///test.db")
 
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
