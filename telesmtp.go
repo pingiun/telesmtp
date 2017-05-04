@@ -412,6 +412,7 @@ func handleModeData(c net.Conn, ch chan string, mailchan chan MessageStruct, sta
 
 		status.Mode = ModeIdentified
 		mailchan <- MessageStruct{Mail: *message, RawMail: status.Mail, To: status.To, From: status.From}
+		status.Mail.Reset()
 		write(c, "250 Message accepted for delivery")
 	} else {
 		status.Mail.WriteString(line)

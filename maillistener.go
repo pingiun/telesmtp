@@ -1,9 +1,14 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"log"
+	"mime"
+	"mime/multipart"
 	"net/mail"
 	"os"
 	"os/exec"
@@ -18,6 +23,63 @@ type JSONMessage struct {
 	Subject string      `json:"subject"`
 	Headers mail.Header `json:"headers"`
 	Body    string      `json:"body"`
+}
+
+func ParseBody(message mail.Message) string {
+	headers := message.Header
+	var body string
+	mediaType, params, err := mime.ParseMediaType(headers.Get("Content-Type"))
+	if err != nil {
+		log.Fatal(err)
+		return ""
+	}
+
+	switch {
+	case mediaType == "" || mediaType == "text/plain":
+		b, err := ioutil.ReadAll(message.Body)
+		if headers.Get("Content-Transfer-Encoding") == "7bit" || headers.Get("Content-Transfer-Encoding") == "" {
+			if err == nil {
+				body = string(b)
+			}
+		} else if headers.Get("Content-Transfer-Encoding") == "base64" {
+			data, err := base64.StdEncoding.DecodeString(string(b))
+			if err != nil {
+				log.Fatal(err)
+				return ""
+			}
+			body = string(data)
+		}
+	case strings.HasPrefix(mediaType, "multipart/"):
+		mr := multipart.NewReader(message.Body, params["boundary"])
+		for {
+			p, err := mr.NextPart()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				log.Fatal(err)
+				return ""
+			}
+
+			partMediaType, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
+			if partMediaType == "" || partMediaType == "text/plain" {
+				b, err := ioutil.ReadAll(p)
+				if headers.Get("Content-Transfer-Encoding") == "7bit" || headers.Get("Content-Transfer-Encoding") == "" {
+					if err == nil {
+						body = string(b)
+					}
+				} else if headers.Get("Content-Transfer-Encoding") == "base64" {
+					data, err := base64.StdEncoding.DecodeString(string(b))
+					if err != nil {
+						log.Fatal(err)
+						return ""
+					}
+					body = string(data)
+				}
+			}
+		}
+	}
+	return body
 }
 
 func CreateJSONMail(raw_message MessageStruct) []byte {
@@ -39,22 +101,12 @@ func CreateJSONMail(raw_message MessageStruct) []byte {
 		to_addresses = []string{raw_message.To.String()}
 	}
 
-	var body string
-	if (headers.Get("Content-Type") == "" || strings.HasPrefix(headers.Get("Content-Type"), "text/plain")) &&
-		(headers.Get("Content-Transfer-Encoding") == "7bit" || headers.Get("Content-Transfer-Encoding") == "") {
-
-		b, err := ioutil.ReadAll(message.Body)
-		if err == nil {
-			body = string(b)
-		}
-	}
-
 	json_message := JSONMessage{
 		From:    from_address,
 		To:      to_addresses,
 		Subject: headers.Get("Subject"),
 		Headers: message.Header,
-		Body:    body,
+		Body:    ParseBody(message),
 	}
 
 	content, err := json.Marshal(json_message)
