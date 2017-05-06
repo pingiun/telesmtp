@@ -39,16 +39,17 @@ def request(bot, update):
         return 'enter_email'
     
     name = update.message.from_user.first_name
-    if update.message.from_user.last_name is not None:
+    if update.message.from_user.last_name != "":
         name += " " + update.message.from_user.last_name
-    if update.message.from_user.username is not None:
+    if update.message.from_user.username != "":
         name += " (" + update.message.from_user.username + ")"
 
-    keyboard = [[InlineKeyboardButton("Yep!", callback_data='{}:{}'.format(update.message.text, update.message.chat_id))], [InlineKeyboardButton("Nope", callback_data='nope')]]
-    bot.send_message(chat_id=MASTER, text="Approve this email address?\nEmail: {}\nUser: {}".format(update.message.text, name), reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard = [[InlineKeyboardButton("Yep!", callback_data='{}:{}'.format(update.message.text.lower(), update.message.chat_id))], [InlineKeyboardButton("Nope", callback_data='nope')]]
+    bot.send_message(chat_id=MASTER, text="Approve this email address?\nEmail: {}\nUser: {}".format(update.message.text.lower(), name), reply_markup=InlineKeyboardMarkup(keyboard))
 
     bot.send_message(chat_id=update.message.chat_id,
         text="Alright I sent a message to my master to check this.")
+    return ConversationHandler.END
 
 def add_link(user_id, address):
     user = TelegramUser.query.filter(TelegramUser.user_id == user_id).first()
@@ -76,6 +77,7 @@ def button(bot, update):
         bot.editMessageText(text="Request for {} accepted".format(split[0]),
                         chat_id=query.message.chat_id,
                         message_id=query.message.message_id)
+        bot.send_message(chat_id=split[1], text="Your request for {} has been accepted".format(split[0]))
 
 @filter_private
 def cancel(bot, update):
