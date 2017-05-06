@@ -13,16 +13,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 MASTER = '167921906'
 
-def filter_private(f):
 
-    @wraps(f)
-    def wrapper(bot, update, *args, **kwargs):
-        if update.message.chat.type == 'private':
-            return f(bot, update, *args, **kwargs)
-
-    return wrapper
-
-@filter_private
 def request_start(bot, update, args):
     if len(args) == 1:
         update.message.text = args[0]
@@ -31,7 +22,6 @@ def request_start(bot, update, args):
         text="Please send an email address for which you want to receive messages.")
     return 'enter_email'
 
-@filter_private
 def request(bot, update):
     if not '@' in update.message.text:
         bot.send_message(chat_id=update.message.chat_id, 
@@ -79,7 +69,6 @@ def button(bot, update):
                         message_id=query.message.message_id)
         bot.send_message(chat_id=split[1], text="Your request for {} has been accepted".format(split[0]))
 
-@filter_private
 def cancel(bot, update):
     bot.send_message(chat_id=update.message.chat_id, text="Canceled current command.")
     return ConversationHandler.END
