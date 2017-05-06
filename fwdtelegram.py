@@ -18,7 +18,7 @@ def send_message(user, from_, to, subject, body):
     if body == "":
         bot.send_message(user, "*From*: {}\n*To*: {}\n*Subject*: {}".format(from_, to, subject), parse_mode='markdown')
     else:
-        bot.send_message(user, "*From*: {}\n*To*: {}\n*Subject*: {}".format(from_, to, subject, body), parse_mode='markdown')
+        bot.send_message(user, "*From*: {}\n*To*: {}\n*Subject*: {}\n\n{}".format(from_, to, subject, body), parse_mode='markdown')
     with open(os.environ['TELESMTP_MAIL_FILE'], 'rb') as f:
         bot.send_document(user, f)
 
