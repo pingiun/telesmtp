@@ -31,7 +31,7 @@ def main():
     else:
         to_addresses = message['to'][0]
 
-    email = address_re.search(message['original_to']).group(1)
+    email = address_re.search(message['delivered_to']).group(1)
     for tg_user in TelegramUser.query.filter(TelegramUser.emailaddresses.any(address=email)):
         print("Sending to", tg_user)
         send_message(str(tg_user.user_id), message['from'], to_addresses, message['subject'], message['body'])
