@@ -18,11 +18,12 @@ import (
 )
 
 type JSONMessage struct {
-	From    string      `json:"from"`
-	To      []string    `json:"to"`
-	Subject string      `json:"subject"`
-	Headers mail.Header `json:"headers"`
-	Body    string      `json:"body"`
+	From        string      `json:"from"`
+	To          []string    `json:"to"`
+	DeliveredTo string      `json:"delivered_to"`
+	Subject     string      `json:"subject"`
+	Headers     mail.Header `json:"headers"`
+	Body        string      `json:"body"`
 }
 
 func ParseBody(message mail.Message) string {
@@ -102,11 +103,12 @@ func CreateJSONMail(raw_message MessageStruct) []byte {
 	}
 
 	json_message := JSONMessage{
-		From:    from_address,
-		To:      to_addresses,
-		Subject: headers.Get("Subject"),
-		Headers: message.Header,
-		Body:    ParseBody(message),
+		From:        from_address,
+		To:          to_addresses,
+		DeliveredTo: raw_message.To.String(),
+		Subject:     headers.Get("Subject"),
+		Headers:     message.Header,
+		Body:        ParseBody(message),
 	}
 
 	content, err := json.Marshal(json_message)

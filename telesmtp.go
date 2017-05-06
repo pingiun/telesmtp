@@ -84,7 +84,7 @@ type Address struct {
 }
 
 func (a Address) String() string {
-	return fmt.Sprintf("%s@%s", a.User, a.Host)
+	return fmt.Sprintf("<%s@%s>", a.User, a.Host)
 }
 
 type Client struct {

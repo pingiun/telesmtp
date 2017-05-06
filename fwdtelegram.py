@@ -31,10 +31,10 @@ def main():
     else:
         to_addresses = message['to'][0]
 
-    for address in message['to']:
-        email = address_re.search(address).group(1)
-        for tg_user in TelegramUser.query.filter(TelegramUser.emailaddresses.any(address=email)):
-            send_message(str(tg_user.user_id), message['from'], message['to'], message['subject'], message['body'])
+    email = address_re.search(message['original_to']).group(1)
+    for tg_user in TelegramUser.query.filter(TelegramUser.emailaddresses.any(address=email)):
+        print("Sending to", tg_user)
+        send_message(str(tg_user.user_id), message['from'], to_addresses, message['subject'], message['body'])
 
     
     print("success")
