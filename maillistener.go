@@ -62,14 +62,16 @@ func ParseBody(message mail.Message) string {
 				return ""
 			}
 
+			partHeaders := p.Header
+
 			partMediaType, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
 			if partMediaType == "" || partMediaType == "text/plain" {
 				b, err := ioutil.ReadAll(p)
-				if headers.Get("Content-Transfer-Encoding") == "7bit" || headers.Get("Content-Transfer-Encoding") == "" {
+				if partHeaders.Get("Content-Transfer-Encoding") == "7bit" || partHeaders.Get("Content-Transfer-Encoding") == "" {
 					if err == nil {
 						body = string(b)
 					}
-				} else if headers.Get("Content-Transfer-Encoding") == "base64" {
+				} else if partHeaders.Get("Content-Transfer-Encoding") == "base64" {
 					data, err := base64.StdEncoding.DecodeString(string(b))
 					if err != nil {
 						log.Fatal(err)
